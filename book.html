@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>新概念英语 · 朗读计数</title>
+<style>
+:root{
+  --bg:#f3f6f1; --card:#ffffff; --ink:#1f2a24; --muted:#6b7a70; --line:#dde5dd;
+  --accent:#2f7d5b; --accent-ink:#ffffff; --done:#c9892b; --track:#e6ece6;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141a17; --card:#1d2621; --ink:#e7eee9; --muted:#93a399; --line:#2b372f;
+    --accent:#4fb88a; --accent-ink:#0d1a13; --done:#e0a64a; --track:#2a362f;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+.wrap{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:4px 0 12px}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.sum b{font-size:1.5rem}
+.bar{height:8px;background:var(--track);border-radius:4px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--accent);width:0}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.tools button,.tools input{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+.tools button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tools input{width:96px}
+.row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.row.done{border-color:var(--done)}
+.no{width:64px;font-weight:600}
+.mid{flex:1;min-width:0}
+.cnt{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+.row.done .cnt{color:var(--done);font-weight:600}
+.btns{display:flex;gap:6px}
+.btns button{font:inherit;min-width:44px;height:40px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.btns .plus{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.nav{display:flex;gap:8px;margin-bottom:8px}.nav a{padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);text-decoration:none;font-size:.9rem}.nav a.cur{background:var(--accent);color:var(--accent-ink)}
+.foot{color:var(--muted);font-size:.85rem;margin:16px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="nav" id="nav"></div>
+  <h1 id="h1"></h1>
+  <div class="sum">
+    <div><b id="total">0</b> / <span id="goalAll"></span> 遍 · 已完成 <b id="doneN">0</b> / <span id="nAll"></span> 课</div>
+    <div class="bar"><i id="allBar"></i></div>
+  </div>
+  <div class="tools">
+    <button data-f="all" class="on">全部</button>
+    <button data-f="todo">未完成</button>
+    <button data-f="done">已完成</button>
+    <input id="jump" type="number" min="1"  placeholder="跳到第几课" inputmode="numeric">
+  </div>
+  <div id="list"></div>
+  <div class="tools">
+    <button id="exp">导出备份</button>
+    <button id="imp">导入备份</button>
+    <button id="rst">全部清零</button>
+  </div>
+  <div class="foot">数据保存在本机浏览器中，清除浏览器数据会丢失，请定期导出备份。</div>
+</div>
+<script>
+(function(){
+  var CFG={1:[144,"一"],2:[96,"二"],3:[60,"三"],4:[48,"四"]};
+  var B=parseInt(new URLSearchParams(location.search).get("b"))||1; if(!CFG[B]) B=1;
+  var N=CFG[B][0], GOAL=100, KEY="nce"+B+"-counts-v1";
+  document.title="新概念英语第"+CFG[B][1]+"册 · 朗读计数";
+  document.getElementById("h1").textContent=document.title;
+  document.getElementById("nAll").textContent=N;
+  document.getElementById("jump").max=N;
+  var nv="";for(var q=1;q<=4;q++) nv+='<a href="?b='+q+'"'+(q===B?' class="cur"':'')+'>第'+CFG[q][1]+'册</a>';
+  document.getElementById("nav").innerHTML=nv;
+  var counts=new Array(N).fill(0), filter="all";
+  try{
+    var raw=localStorage.getItem(KEY);
+    if(raw){var a=JSON.parse(raw); if(Array.isArray(a)) for(var i=0;i<N;i++) counts[i]=Math.max(0,parseInt(a[i])||0);}
+  }catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(counts));}catch(e){}}
+  var $=function(id){return document.getElementById(id)};
+  var list=$("list");
+  document.getElementById("goalAll").textContent=N*GOAL;
+
+  var rows=[];
+  for(var i=0;i<N;i++){
+    var r=document.createElement("div"); r.className="row"; r.id="l"+(i+1);
+    r.innerHTML='<div class="no">第'+(i+1)+'课</div><div class="mid"><div class="cnt"></div><div class="bar"><i></i></div></div>'+
+      '<div class="btns"><button class="minus" aria-label="减一遍">−1</button><button class="plus" aria-label="加一遍">+1</button></div>';
+    r.dataset.i=i; list.appendChild(r); rows.push(r);
+  }
+  function paintRow(i){
+    var r=rows[i], c=counts[i], d=c>=GOAL;
+    r.classList.toggle("done",d);
+    r.querySelector(".cnt").textContent=c+" / "+GOAL+(d?" ✓":"");
+    r.querySelector(".bar i").style.width=Math.min(100,c)+"%";
+    r.querySelector(".bar i").style.background=d?"var(--done)":"var(--accent)";
+    var show=filter==="all"||(filter==="done"?d:!d);
+    r.style.display=show?"":"none";
+  }
+  function paintAll(){
+    var t=0,dn=0;
+    for(var i=0;i<N;i++){paintRow(i); t+=Math.min(counts[i],GOAL); if(counts[i]>=GOAL)dn++;}
+    $("total").textContent=t; $("doneN").textContent=dn;
+    $("allBar").style.width=(t/(N*GOAL)*100)+"%";
+  }
+  list.addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    var i=+b.closest(".row").dataset.i;
+    if(b.classList.contains("plus")) counts[i]++;
+    else if(counts[i]>0) counts[i]--;
+    save(); paintAll();
+  });
+  document.querySelectorAll("[data-f]").forEach(function(b){
+    b.addEventListener("click",function(){
+      filter=b.dataset.f;
+      document.querySelectorAll("[data-f]").forEach(function(x){x.classList.toggle("on",x===b)});
+      paintAll();
+    });
+  });
+  $("jump").addEventListener("change",function(){
+    var n=parseInt(this.value); if(!(n>=1&&n<=N)) return;
+    filter="all"; document.querySelectorAll("[data-f]").forEach(function(x){x.classList.toggle("on",x.dataset.f==="all")});
+    paintAll(); rows[n-1].scrollIntoView({behavior:"smooth",block:"center"});
+  });
+  $("exp").addEventListener("click",function(){
+    var s=JSON.stringify(counts);
+    var a=document.createElement("a");
+    a.href="data:application/json;charset=utf-8,"+encodeURIComponent(s);
+    a.download="nce"+B+"-backup.json"; document.body.appendChild(a); a.click(); a.remove();
+    if(navigator.clipboard){navigator.clipboard.writeText(s).catch(function(){});}
+  });
+  $("imp").addEventListener("click",function(){
+    var s=prompt("粘贴备份内容（导出时已自动复制到剪贴板）："); if(!s) return;
+    try{
+      var a=JSON.parse(s); if(!Array.isArray(a)) throw 0;
+      for(var i=0;i<N;i++) counts[i]=Math.max(0,parseInt(a[i])||0);
+      save(); paintAll();
+    }catch(e){alert("备份内容格式不正确");}
+  });
+  $("rst").addEventListener("click",function(){
+    if(confirm("确定要把所有课的计数清零吗？")&&confirm("再确认一次：清零后无法恢复。")){
+      counts.fill(0); save(); paintAll();
+    }
+  });
+  paintAll();
+})();
+</script>
+</body>
+</html>
